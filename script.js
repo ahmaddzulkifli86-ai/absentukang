@@ -173,9 +173,6 @@ function tampilkanTabel() {
             <td>${formatRupiah(item.biayaTukang)}</td>
             <td>${formatRupiah(item.biayaKenek)}</td>
             <td><strong>${formatRupiah(item.totalBiaya)}</strong></td>
-            <td>
-                <button class="btn-delete" onclick="hapusData(${index})">Hapus</button>
-            </td>
         </tr>
     `).join('');
 }

@@ -1,6 +1,14 @@
 {
   "data": [
     {
+      "tanggal": "2026-05-31",
+      "jumlahTukang": 2,
+      "jumlahKenek": 3,
+      "biayaTukang": 440000,
+      "biayaKenek": 450000,
+      "totalBiaya": 890000
+    },
+    {
       "tanggal": "2026-06-01",
       "jumlahTukang": 2,
       "jumlahKenek": 3,
@@ -9,5 +17,5 @@
       "totalBiaya": 890000
     }
   ],
-  "lastUpdate": "2026-06-01T23:52:56.004Z"
+  "lastUpdate": "2026-06-01T23:53:06.825Z"
 }

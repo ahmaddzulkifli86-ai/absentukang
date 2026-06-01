@@ -36,6 +36,11 @@
                     <input type="number" id="tambahSaldoInput" min="0" placeholder="Masukkan jumlah saldo (Rp)">
                     <button class="btn-add-saldo" onclick="tambahSaldo()">+ Tambah Saldo</button>
                 </div>
+
+                <div class="sync-status">
+                    <span id="syncStatus">🟢 Sinkron</span>
+                    <span id="lastSync" class="last-sync"></span>
+                </div>
             </div>
 
             <div class="form-section">
@@ -58,7 +63,7 @@
                 </div>
 
                 <button class="btn-submit" onclick="tambahData()">✓ Tambah Data</button>
-                <!--button class="btn-reset" onclick="resetForm()">↻ Reset</button-->
+                <button class="btn-reset" onclick="resetForm()">↻ Reset</button>
             </div>
 
             <div class="summary-section">
@@ -92,7 +97,7 @@
                                 <th>Biaya Tukang</th>
                                 <th>Biaya Kenek</th>
                                 <th>Total</th>
-                                <!--th>Aksi</th-->
+                                <th>Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="isiTabel">
@@ -105,12 +110,12 @@
             <div class="export-section">
                 <button class="btn-export" onclick="exportCSV()">📥 Export ke CSV</button>
                 <button class="btn-print" onclick="window.print()">🖨️ Print</button>
-                <!--button class="btn-clear" onclick="hapusSemua()">🗑️ Hapus Semua</button-->
+                <button class="btn-clear" onclick="hapusSemua()">🗑️ Hapus Semua</button>
             </div>
         </main>
 
         <footer>
-            <p>© 2026 Sistem Absensi Tukang & Kenek | Developed with ❤️</p>
+            <p>© 2026 Sistem Absensi Tukang & Kenek | Database Cloud Terhubung ☁️</p>
         </footer>
     </div>
 

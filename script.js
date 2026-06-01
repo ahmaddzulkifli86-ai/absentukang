@@ -2,9 +2,17 @@
 const HARGA_TUKANG = 220000;
 const HARGA_KENEK = 150000;
 
+// GitHub API Configuration
+const GITHUB_TOKEN = 'ghp_YOUR_TOKEN_HERE'; // Akan diisi user
+const REPO_OWNER = 'ahmaddzulkifli86-ai';
+const REPO_NAME = 'absentukang';
+const DATA_FILE = 'data.json';
+const SALDO_FILE = 'saldo.json';
+
 // Data penyimpanan
 let dataAbsensi = [];
 let saldoTersedia = 0;
+let lastSyncTime = null;
 
 // Inisialisasi saat halaman dimuat
 document.addEventListener('DOMContentLoaded', function() {
@@ -12,13 +20,252 @@ document.addEventListener('DOMContentLoaded', function() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('tanggal').value = today;
     
-    // Load data dari localStorage
-    loadData();
+    // Load data dari cloud
+    loadDataFromCloud();
     
     // Update perhitungan ketika input berubah
     document.getElementById('jumlahTukang').addEventListener('input', updateSummary);
     document.getElementById('jumlahKenek').addEventListener('input', updateSummary);
+    
+    // Auto sync setiap 10 detik
+    setInterval(syncDataFromCloud, 10000);
 });
+
+// Inisialisasi GitHub Token
+function initGitHubToken() {
+    const token = localStorage.getItem('githubToken');
+    if (!token) {
+        const userToken = prompt('Masukkan GitHub Personal Access Token Anda:\n\nBuat token di: https://github.com/settings/tokens\n- Pilih scopes: repo (full control of private repositories)');
+        if (userToken) {
+            localStorage.setItem('githubToken', userToken);
+            return userToken;
+        }
+    }
+    return token;
+}
+
+// Load data dari Cloud (GitHub)
+async function loadDataFromCloud() {
+    try {
+        const token = initGitHubToken();
+        if (!token) {
+            showNotification('Mohon setup GitHub token terlebih dahulu', 'warning');
+            loadDataFromLocal();
+            return;
+        }
+        
+        // Load absensi data
+        const absensiResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`,
+            {
+                headers: { 'Authorization': `token ${token}` }
+            }
+        );
+        
+        if (absensiResponse.ok) {
+            const absensiData = await absensiResponse.json();
+            const decodedContent = atob(absensiData.content);
+            const parsedData = JSON.parse(decodedContent);
+            dataAbsensi = parsedData.data || [];
+        }
+        
+        // Load saldo data
+        const saldoResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${SALDO_FILE}`,
+            {
+                headers: { 'Authorization': `token ${token}` }
+            }
+        );
+        
+        if (saldoResponse.ok) {
+            const saldoData = await saldoResponse.json();
+            const decodedContent = atob(saldoData.content);
+            const parsedData = JSON.parse(decodedContent);
+            saldoTersedia = parsedData.saldo || 0;
+        }
+        
+        tampilkanTabel();
+        updateSaldoDisplay();
+        updateSyncStatus();
+    } catch (error) {
+        console.log('Cloud sync error:', error);
+        loadDataFromLocal();
+    }
+}
+
+// Sync data dari cloud
+async function syncDataFromCloud() {
+    try {
+        const token = localStorage.getItem('githubToken');
+        if (!token) return;
+        
+        const absensiResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`,
+            {
+                headers: { 'Authorization': `token ${token}` }
+            }
+        );
+        
+        if (absensiResponse.ok) {
+            const absensiData = await absensiResponse.json();
+            const decodedContent = atob(absensiData.content);
+            const parsedData = JSON.parse(decodedContent);
+            const cloudData = parsedData.data || [];
+            
+            // Cek jika ada perubahan di cloud
+            if (JSON.stringify(cloudData) !== JSON.stringify(dataAbsensi)) {
+                dataAbsensi = cloudData;
+                tampilkanTabel();
+            }
+        }
+        
+        const saldoResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${SALDO_FILE}`,
+            {
+                headers: { 'Authorization': `token ${token}` }
+            }
+        );
+        
+        if (saldoResponse.ok) {
+            const saldoData = await saldoResponse.json();
+            const decodedContent = atob(saldoData.content);
+            const parsedData = JSON.parse(decodedContent);
+            const cloudSaldo = parsedData.saldo || 0;
+            
+            if (cloudSaldo !== saldoTersedia) {
+                saldoTersedia = cloudSaldo;
+                updateSaldoDisplay();
+            }
+        }
+        
+        updateSyncStatus();
+    } catch (error) {
+        console.log('Sync error:', error);
+    }
+}
+
+// Simpan data ke Cloud (GitHub)
+async function saveDataToCloud() {
+    try {
+        const token = localStorage.getItem('githubToken');
+        if (!token) {
+            showNotification('GitHub token tidak ditemukan', 'warning');
+            saveDataToLocal();
+            return;
+        }
+        
+        // Save absensi data
+        const absensiContent = JSON.stringify({
+            data: dataAbsensi,
+            lastUpdate: new Date().toISOString()
+        }, null, 2);
+        
+        // Get SHA untuk update
+        const checkResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`,
+            {
+                headers: { 'Authorization': `token ${token}` }
+            }
+        );
+        
+        let sha = null;
+        if (checkResponse.ok) {
+            const fileData = await checkResponse.json();
+            sha = fileData.sha;
+        }
+        
+        // Upload absensi
+        await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_FILE}`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'Update absensi data',
+                    content: btoa(absensiContent),
+                    sha: sha
+                })
+            }
+        );
+        
+        // Save saldo data
+        const saldoContent = JSON.stringify({
+            saldo: saldoTersedia,
+            lastUpdate: new Date().toISOString()
+        }, null, 2);
+        
+        const saldoCheckResponse = await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${SALDO_FILE}`,
+            {
+                headers: { 'Authorization': `token ${token}` }
+            }
+        );
+        
+        let saldoSha = null;
+        if (saldoCheckResponse.ok) {
+            const saldoData = await saldoCheckResponse.json();
+            saldoSha = saldoData.sha;
+        }
+        
+        // Upload saldo
+        await fetch(
+            `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${SALDO_FILE}`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'Update saldo data',
+                    content: btoa(saldoContent),
+                    sha: saldoSha
+                })
+            }
+        );
+        
+        updateSyncStatus();
+        showNotification('Data tersimpan ke cloud', 'success');
+    } catch (error) {
+        console.error('Cloud save error:', error);
+        showNotification('Gagal menyimpan ke cloud, disimpan lokal', 'warning');
+        saveDataToLocal();
+    }
+}
+
+// Load data dari Local (Backup)
+function loadDataFromLocal() {
+    const saved = localStorage.getItem('dataAbsensi');
+    const saldo = localStorage.getItem('saldoTersedia');
+    
+    if (saved) {
+        dataAbsensi = JSON.parse(saved);
+        tampilkanTabel();
+    }
+    
+    if (saldo) {
+        saldoTersedia = parseInt(saldo);
+    }
+    
+    updateSaldoDisplay();
+}
+
+// Simpan data lokal
+function saveDataToLocal() {
+    localStorage.setItem('dataAbsensi', JSON.stringify(dataAbsensi));
+    localStorage.setItem('saldoTersedia', saldoTersedia);
+}
+
+// Update tampilan sync status
+function updateSyncStatus() {
+    lastSyncTime = new Date();
+    const timeString = lastSyncTime.toLocaleTimeString('id-ID');
+    document.getElementById('lastSync').textContent = `⏱️ Terakhir: ${timeString}`;
+    document.getElementById('syncStatus').textContent = '🟢 Sinkron';
+}
 
 // Update ringkasan perhitungan
 function updateSummary() {
@@ -55,11 +302,12 @@ function tambahSaldo() {
     }
     
     saldoTersedia += jumlah;
-    saveData();
+    saveDataToLocal();
+    saveDataToCloud();
     updateSaldoDisplay();
     inputElement.value = '';
     
-    showNotification('Saldo berhasil ditambahkan Rp ' + formatRupiah(jumlah).replace('Rp ', ''), 'success');
+    showNotification('Saldo berhasil ditambahkan', 'success');
 }
 
 // Update tampilan saldo
@@ -74,11 +322,11 @@ function updateSaldoDisplay() {
     // Ubah warna sisa saldo berdasarkan kondisi
     const sisaSaldoElement = document.getElementById('sisaSaldo');
     if (sisaSaldo < 0) {
-        sisaSaldoElement.style.color = '#dc2626'; // Merah jika minus
+        sisaSaldoElement.style.color = '#dc2626';
     } else if (sisaSaldo === 0) {
-        sisaSaldoElement.style.color = '#f59e0b'; // Orange jika pas
+        sisaSaldoElement.style.color = '#f59e0b';
     } else {
-        sisaSaldoElement.style.color = '#2563eb'; // Biru jika positif
+        sisaSaldoElement.style.color = '#2563eb';
     }
 }
 
@@ -88,7 +336,6 @@ function tambahData() {
     const jumlahTukang = parseInt(document.getElementById('jumlahTukang').value) || 0;
     const jumlahKenek = parseInt(document.getElementById('jumlahKenek').value) || 0;
     
-    // Validasi input
     if (!tanggal) {
         alert('Mohon pilih tanggal');
         return;
@@ -137,18 +384,14 @@ function tambahData() {
         });
     }
     
-    // Urutkan berdasarkan tanggal
     dataAbsensi.sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
     
-    // Simpan ke localStorage
-    saveData();
-    
-    // Update tampilan
+    saveDataToLocal();
+    saveDataToCloud();
     tampilkanTabel();
     updateSaldoDisplay();
     resetForm();
     
-    // Tampilkan notifikasi
     showNotification('Data berhasil ditambahkan! Sisa saldo: ' + formatRupiah(saldoTersedia - dataAbsensi.reduce((sum, item) => sum + item.totalBiaya, 0)), 'success');
 }
 
@@ -173,6 +416,9 @@ function tampilkanTabel() {
             <td>${formatRupiah(item.biayaTukang)}</td>
             <td>${formatRupiah(item.biayaKenek)}</td>
             <td><strong>${formatRupiah(item.totalBiaya)}</strong></td>
+            <td>
+                <button class="btn-delete" onclick="hapusData(${index})">Hapus</button>
+            </td>
         </tr>
     `).join('');
 }
@@ -183,12 +429,24 @@ function formatTanggal(tanggal) {
     return new Date(tanggal + 'T00:00:00').toLocaleDateString('id-ID', options);
 }
 
+// Hapus data berdasarkan index
+function hapusData(index) {
+    if (confirm('Yakin ingin menghapus data ini?')) {
+        dataAbsensi.splice(index, 1);
+        saveDataToLocal();
+        saveDataToCloud();
+        tampilkanTabel();
+        updateSaldoDisplay();
+        showNotification('Data berhasil dihapus', 'info');
+    }
+}
 
 // Hapus semua data
 function hapusSemua() {
     if (confirm('Yakin ingin menghapus SEMUA data? Tindakan ini tidak dapat dibatalkan.')) {
         dataAbsensi = [];
-        saveData();
+        saveDataToLocal();
+        saveDataToCloud();
         tampilkanTabel();
         updateSaldoDisplay();
         resetForm();
@@ -221,7 +479,6 @@ function exportCSV() {
         csv += `${index + 1},"${item.tanggal}",${item.jumlahTukang},${item.jumlahKenek},${item.biayaTukang},${item.biayaKenek},${item.totalBiaya}\n`;
     });
     
-    // Hitung total
     const totalTukang = dataAbsensi.reduce((sum, item) => sum + item.biayaTukang, 0);
     const totalKenek = dataAbsensi.reduce((sum, item) => sum + item.biayaKenek, 0);
     const grandTotal = dataAbsensi.reduce((sum, item) => sum + item.totalBiaya, 0);
@@ -230,7 +487,6 @@ function exportCSV() {
     csv += '\n,Total:,,,' + totalTukang + ',' + totalKenek + ',' + grandTotal + '\n';
     csv += '\n,Sisa Saldo:' + sisaSaldo + '\n';
     
-    // Download
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -246,32 +502,8 @@ function exportCSV() {
     showNotification('File berhasil didownload', 'success');
 }
 
-// Simpan data ke localStorage
-function saveData() {
-    localStorage.setItem('dataAbsensi', JSON.stringify(dataAbsensi));
-    localStorage.setItem('saldoTersedia', saldoTersedia);
-}
-
-// Load data dari localStorage
-function loadData() {
-    const saved = localStorage.getItem('dataAbsensi');
-    const saldo = localStorage.getItem('saldoTersedia');
-    
-    if (saved) {
-        dataAbsensi = JSON.parse(saved);
-        tampilkanTabel();
-    }
-    
-    if (saldo) {
-        saldoTersedia = parseInt(saldo);
-    }
-    
-    updateSaldoDisplay();
-}
-
 // Tampilkan notifikasi
 function showNotification(message, type) {
-    // Buat elemen notifikasi
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed;
@@ -291,7 +523,6 @@ function showNotification(message, type) {
     
     document.body.appendChild(notification);
     
-    // Hapus setelah 3 detik
     setTimeout(() => {
         notification.style.animation = 'slideOut 0.3s ease-out';
         setTimeout(() => {
